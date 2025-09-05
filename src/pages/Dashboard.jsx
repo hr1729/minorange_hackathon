@@ -32,6 +32,8 @@ const severityData = [
 
 const Dashboard = () => {
   const [scanning, setScanning] = useState(false);
+  const [repoUrl, setRepoUrl] = useState('');
+  const [scanResults, setScanResults] = useState(null);
   const { addNotification } = useNotifications();
   const [activeTab, setActiveTab] = useState('overview');
 
@@ -66,15 +68,30 @@ const Dashboard = () => {
     },
   ];
 
-  const handleScan = () => {
+  const handleScan = async () => {
+    if (!repoUrl) {
+      addNotification({ title: 'Missing URL', message: 'Please enter a repository URL.' });
+      return;
+    }
     setScanning(true);
-    setTimeout(() => {
-      setScanning(false);
-      addNotification({
-        title: 'Scan Complete',
-        message: 'Security scan completed successfully. Found 3 new issues.',
+    setScanResults(null);
+    try {
+      const res = await fetch('/api/sonar/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoUrl }),
       });
-    }, 2000);
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data?.error || 'Scan failed');
+      }
+      setScanResults(data.results);
+      addNotification({ title: 'Scan Complete', message: 'SonarQube scan completed.' });
+    } catch (e) {
+      addNotification({ title: 'Scan Failed', message: String(e.message || e) });
+    } finally {
+      setScanning(false);
+    }
   };
 
   return (
@@ -198,12 +215,30 @@ const Dashboard = () => {
                       type="url"
                       placeholder="https://github.com/user/repo"
                       className="flex-1"
+                      value={repoUrl}
+                      onChange={(e) => setRepoUrl(e.target.value)}
                     />
                     <Button onClick={handleScan} disabled={scanning}>
                       {scanning ? 'Scanning...' : 'Start Scan'}
                     </Button>
                   </div>
                 </div>
+                {scanResults && (
+                  <div className="pt-4">
+                    <h3 className="text-lg font-semibold mb-2">Security Issues Found</h3>
+                    <pre className="bg-gray-50 border rounded p-3 max-h-64 overflow-auto text-sm">
+                      {JSON.stringify(
+                        {
+                          measures: scanResults?.measures?.component?.measures,
+                          totalIssues: scanResults?.issues?.total,
+                          facets: scanResults?.issues?.facets,
+                        },
+                        null,
+                        2
+                      )}
+                    </pre>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
